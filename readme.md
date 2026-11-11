@@ -1,8 +1,8 @@
-# 🎮 PyMC Launcher — Python Minecraft 启动器
+# 🎮 CBL Cube Launcher — Python Minecraft 启动器
 
 ## 📋 项目概述
 
-一个使用 Python + PyQt6 开发的 Minecraft 游戏启动器，支持微软正版登录和离线模式，具备版本管理、Mod 加载器安装、Java 自动检测等功能。
+一个 Python + PyQt6 写的 Minecraft 启动器。支持 Java 版（Forge / Fabric / Quilt / NeoForge、整合包导入）、基岩版唤醒与内容包导入、BDS 服务端；用「实例」管理独立游戏目录；三路登录（离线 / 微软 / LittleSkin）；自带下载器（断点续传 + 分块并发 + SHA1 校验）与崩溃诊断规则库。
 
 ## 🏗️ 技术栈
 
@@ -17,34 +17,39 @@
 ## 📁 项目结构
 
 ```
-minecraft启动器/
-├── main.py                     # 程序入口
-├── readme.md                   # 设计文档
-├── requirements.txt            # Python 依赖
-├── core/                       # 核心业务逻辑
-│   ├── __init__.py
-│   ├── config.py               # 配置管理（读写 config.json）
-│   ├── auth.py                 # 认证系统（微软 + 离线）
-│   ├── java_utils.py           # Java 检测与自动下载
-│   ├── version_manager.py      # MC 版本管理
-│   ├── launcher.py             # 游戏启动逻辑
-│   ├── mod_manager.py          # Forge / Fabric 安装
-│   └── skin_manager.py         # 皮肤获取与缓存
-├── ui/                         # UI 界面
-│   ├── __init__.py
-│   ├── main_window.py          # 主窗口（侧边栏导航 + 页面切换）
-│   ├── styles.py               # QSS 全局样式
-│   ├── pages/                  # 页面模块
-│   │   ├── __init__.py
-│   │   ├── home_page.py        # 首页 / 启动页
-│   │   ├── versions_page.py    # 版本管理页
-│   │   ├── settings_page.py    # 设置页
-│   │   └── mods_page.py        # Mod 加载器页
-│   └── widgets/                # 可复用组件
-│       ├── __init__.py
-│       └── progress_dialog.py  # 下载进度对话框
-└── resources/                  # 资源文件
-    └── (图标等)
+启动器根目录（便携式：config.json 与 .minecraft 都在这里）
+├── main.py                     # 入口：路径设置 → 协议 → 配置 → 下载器接管 → 主窗口
+├── AGENTS.md                   # 给 agent 的导航指针（正文在 docs/agents/）
+├── readme.md                   # 架构与历代决策（v0.1 → v0.9.3）
+├── minecraft-launcher-progress.md
+├── core/
+│   ├── providers/              # 产品抽象：UI 只按能力标记渲染
+│   │   ├── base.py             # GameProvider 协议 + GameVersion / Instance / LaunchHandle + CAP_*
+│   │   ├── __init__.py         # 注册表 + ProviderContext
+│   │   ├── java/               # version / launch / loaders / packs / runtime / deps
+│   │   ├── bedrock/            # AppX 探测 + 唤醒 + .mcpack/.mcaddon/.mcworld 导入
+│   │   └── server/             # BDS：导入、启动、stdin 控制台、日志跟随
+│   ├── instances.py            # 实例注册表（版本 + 独立游戏目录 + 启动配置）
+│   ├── download.py             # Range 续传 + 分块并发 + SHA1 校验，接管库内 11 个模块
+│   ├── diagnose.py             # 18 条崩溃 / 日志规则
+│   ├── paths.py                # 跨平台系统层 + 中文路径的 ASCII 目录联接
+│   ├── i18n.py                 # 中英骨架
+│   ├── config.py secret.py     # 配置（原子写 + 损坏备份）/ 令牌 DPAPI 加密
+│   ├── mirror.py               # 三源测速 + Session 级重写 + 缺文件回退官方
+│   ├── auth.py yggdrasil.py    # 微软 OAuth / LittleSkin + authlib-injector
+│   ├── java_utils.py java_manager.py    # 系统 Java 扫描 / Mojang 运行时兜底
+│   ├── performance.py log_manager.py    # JVM 参数 / 会话日志与崩溃定位
+│   └── skin_manager.py skin_local.py    # 头像缓存 / CustomSkinLoader 部署
+├── ui/
+│   ├── main_window.py          # 无边框窗口 + 三页导航 + 后台测速 / Java 检查
+│   ├── styles.py background.py tokens.py agreement_dialog.py
+│   ├── pages/                  # home_page / library_page（产品树 + 实例详情 + 安装面板）/ settings_page
+│   └── widgets/                # common / icons（像素画）/ progress_dialog（真取消）/ ms_login_dialog
+├── tools/build_release.py      # 构建 + 投放 website/downloads
+├── docs/agents/                # issue-tracker / triage-labels / domain（给 skills 读）
+├── website/                    # 静态发布页（14 主题切换）
+├── design-system/              # 设计系统与落地页规范
+└── resources/cbl.ico           # 多尺寸像素图标（16/32/48/64/128/256）
 ```
 
 ## ✨ 核心功能
@@ -110,7 +115,7 @@ minecraft启动器/
 
 ```
 ┌─────────────┬────────────────────────────────────────┐
-│  [◆] PyMC   │                                        │
+│  [◆] CBL    │                                        │
 │   LAUNCHER  │                                        │
 │             │                                        │
 │   首页      │         [Content Area]                 │

@@ -1,4 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
+# 历史产物配置：2026-10-27 用它构建出 dist/PyMC_Launcher.exe（改名前的品牌）。
+# 当前构建请用 CBL_Launcher.spec（onedir，默认 / CBL_ONEFILE=1 切单文件）。
+# 保留本文件是为了能复现那个旧产物，不参与日常构建。
 
 
 a = Analysis(

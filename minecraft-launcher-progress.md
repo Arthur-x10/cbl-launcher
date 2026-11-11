@@ -1,9 +1,9 @@
-# PyMC Launcher 开发进度
+# CBL Cube Launcher 开发进度
 
 ## 项目路径
 `C:\Users\ethan\Desktop\minecraft启动器`
 
-## 当前版本: v0.9.0（多产品重铸：Java / 基岩 / 服务端）
+## 当前版本: v0.9.3（多产品 + 中文路径修复）
 
 ## 技术栈
 - Python + PyQt6
