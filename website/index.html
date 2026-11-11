@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="grass_block">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CBL Cube Launcher — 像素风 Minecraft 启动器</title>
+  <meta name="description" content="CBL 是面向 Minecraft: Java Edition 的本地启动器。内置官方 Java、四大加载器、整合包导入与自动性能分配。">
+  <meta name="theme-color" content="#07110A">
+  <link rel="icon" href="./assets/img/favicon.ico" type="image/x-icon">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&family=Press+Start+2P&family=ZCOOL+QingKe+HuangYou&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./assets/css/main.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <div class="pixel-grid" aria-hidden="true"></div>
+  <canvas id="fx" aria-hidden="true"></canvas>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="#top" aria-label="CBL 首页">
+        <svg class="brand-mark" viewBox="0 0 28 28" aria-hidden="true">
+          <path d="M14 2l10 6v12l-10 6L4 20V8z" fill="#3d8b20"/>
+          <path d="M14 2l10 6-10 6L4 8z" fill="#55c03a"/>
+          <path d="M14 14l10-6v12l-10 6z" fill="#2f6a18"/>
+        </svg>
+        <span class="brand-name">CBL</span>
+      </a>
+      <div class="header-right">
+        <nav class="nav-links" aria-label="页面章节">
+          <a href="#features">能力</a>
+          <a href="#themes">主题</a>
+          <a href="#start">开始</a>
+          <a href="#download">下载</a>
+          <a href="#legal">声明</a>
+        </nav>
+        <a class="btn btn-accent header-cta" href="#download">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/>
+          </svg>
+          下载
+        </a>
+      </div>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="mobile-nav" aria-label="打开导航">
+        <span class="nav-toggle-bars"></span>
+      </button>
+    </div>
+    <nav id="mobile-nav" class="mobile-nav" aria-label="移动导航">
+      <a href="#features">能力</a>
+      <a href="#themes">主题</a>
+      <a href="#start">开始</a>
+      <a href="#download">下载</a>
+      <a href="#legal">声明</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="hero-sky" aria-hidden="true"></div>
+      <div class="hero-horizon" aria-hidden="true"></div>
+      <div class="wrap hero-inner">
+        <div>
+          <p class="eyebrow">CUBE LAUNCHER  v0.6.0</p>
+          <h1 data-split>
+            <span class="word">CBL</span>
+          </h1>
+          <p class="hero-lead">一块草方块，装下整个世界</p>
+          <p class="hero-copy">
+            CBL 是面向 Minecraft: Java Edition 的本地启动器。
+            免配置 Java、四加载器、整合包导入、三路登录，以及按机器自动分配内存。
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-accent" href="#download">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/>
+              </svg>
+              下载 Windows 版
+            </a>
+            <a class="btn btn-ghost" href="#features">查看能力</a>
+          </div>
+          <div class="hero-meta">
+            <span>Windows 10 / 11 x64</span>
+            <span>绿色便携，exe 旁生成 .minecraft</span>
+            <span>不托管、不分发游戏本体</span>
+          </div>
+        </div>
+        <div class="stage" aria-hidden="true">
+          <div class="cube-scene">
+            <div class="mc-cube">
+              <div class="mc-face mc-top"></div>
+              <div class="mc-face mc-bottom"></div>
+              <div class="mc-face mc-front"></div>
+              <div class="mc-face mc-back"></div>
+              <div class="mc-face mc-left"></div>
+              <div class="mc-face mc-right"></div>
+            </div>
+          </div>
+          <div class="cube-shadow"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="features">
+      <div class="wrap">
+        <p class="section-kicker">FEATURES</p>
+        <h2>启动之前，环境已经准备好</h2>
+        <p class="section-lead">一页说清版本、加载器、Java 和整合包，不再把安装流程拆成互不相关的栏目。</p>
+        <div class="feature-grid" data-reveal>
+          <article class="card">
+            <div class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16v10H4zM8 7V5h8v2M9 12h6"/></svg>
+            </div>
+            <h3>内置官方 Java</h3>
+            <p>自动下载 Mojang 运行时：jre-legacy、java-runtime-gamma、java-runtime-delta，按游戏版本匹配 Java 8 / 17 / 21。</p>
+          </article>
+          <article class="card">
+            <div class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/></svg>
+            </div>
+            <h3>四大加载器</h3>
+            <p>Forge、Fabric、Quilt、NeoForge 列在同一安装流程里。可查看对应游戏版本的构建。</p>
+          </article>
+          <article class="card">
+            <div class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h16v12H4zM8 8V6l2-2h4l2 2v2"/></svg>
+            </div>
+            <h3>整合包导入</h3>
+            <p>支持 Modrinth .mrpack，以及 CurseForge / MultiMC / Prism 的 zip。</p>
+          </article>
+          <article class="card">
+            <div class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0"/></svg>
+            </div>
+            <h3>三路登录</h3>
+            <p>离线进档、内置浏览器完成微软授权、LittleSkin Yggdrasil。本地皮肤与披风可写入 CustomSkinLoader，无需只依赖第三方。</p>
+          </article>
+          <article class="card">
+            <div class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 3L4 14h7l-1 7 10-13h-7z"/></svg>
+            </div>
+            <h3>自动性能</h3>
+            <p>读取本机内存与 CPU，计算可用内存上限，并写入针对性的 G1GC 参数。崩溃与会话日志保存在 .minecraft/logs。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="themes">
+      <div class="wrap">
+        <p class="section-kicker">WORLDS</p>
+        <h2>十四种世界，按一下就换天</h2>
+        <p class="section-lead">发布页背景与启动器内的像素主题同源：草方块、末地、下界、深海、暮色森林、樱花林、蘑菇岛、雪原、沙漠、深暗之域、恶地、繁茂洞穴、紫水晶洞、红树林。启动器里切换即预览，保存后记住。</p>
+        <div class="theme-grid" role="group" aria-label="切换页面主题">
+          <button class="theme-btn" type="button" data-theme="grass_block" aria-pressed="true">
+            <span class="theme-swatch" style="background:linear-gradient(90deg,#529e2a 50%,#694e34 50%)"></span>
+            <span class="theme-name">草方块</span>
+            <span class="theme-state">当前主题</span>
+          </button>
+          <button class="theme-btn" type="button" data-theme="the_end" aria-pressed="false">
+            <span class="theme-swatch" style="background:linear-gradient(90deg,#1a0f2e 50%,#cdc8a0 50%)"></span>
+            <span class="theme-name">末地</span>
+            <span class="theme-state">点击切换</span>
+          </button>
+          <button class="theme-btn" type="button" data-theme="nether" aria-pressed="false">
+            <span class="theme-swatch" style="background:linear-gradient(90deg,#501912 50%,#ff6414 50%)"></span>
+            <span class="theme-name">下界</span>
+            <span class="theme-state">点击切换</span>
+          </button>
+          <button class="theme-btn" type="button" data-theme="ocean" aria-pressed="false">
+            <span class="theme-swatch" style="background:linear-gradient(90deg,#123c64 50%,#32ffc8 50%)"></span>
+            <span class="theme-name">深海</span>
+            <span class="theme-state">点击切换</span>
+          </button>
+          <button class="theme-btn" type="button" data-theme="twilight" aria-pressed="false">
+            <span class="theme-swatch" style="background:linear-gradient(90deg,#2d6e46 50%,#ffdc50 50%)"></span>
+            <span class="theme-name">暮色森林</span>
+            <span class="theme-state">点击切换</span>
+          </button>
+          <button class="theme-btn" type="button" data-theme="cherry" aria-pressed="false">
+            <span class="theme-swatch" style="background:linear-gradient(90deg,#b48ca0 50%,#5a4132 50%)"></span>
+            <span class="theme-name">樱花林</span>
+            <span class="theme-state">点击切换</span>
+          </button>
+          <button class="theme-btn" type="button" data-theme="mushroom" aria-pressed="false">
+            <span class="theme-swatch" style="background:linear-gradient(90deg,#807480 50%,#685260 50%)"></span>
+            <span class="theme-name">蘑菇岛</span>
+            <span class="theme-state">点击切换</span>
+          </button>
+          <button class="theme-btn" type="button" data-theme="snowy" aria-pressed="false">
+            <span class="theme-swatch" style="background:linear-gradient(90deg,#e2ecf6 50%,#96b2c8 50%)"></span>
+            <span class="theme-name">雪原</span>
+            <span class="theme-state">点击切换</span>
+          </button>
+          <button class="theme-btn" type="button" data-theme="desert" aria-pressed="false">
+            <span class="theme-swatch" style="background:linear-gradient(90deg,#dcc482 50%,#ba9460 50%)"></span>
+            <span class="theme-name">沙漠</span>
+            <span class="theme-state">点击切换</span>
+          </button>
+          <button class="theme-btn" type="button" data-theme="deep_dark" aria-pressed="false">
+            <span class="theme-swatch" style="background:linear-gradient(90deg,#102a2c 50%,#0a181e 50%)"></span>
+            <span class="theme-name">深暗之域</span>
+            <span class="theme-state">点击切换</span>
+          </button>
+          <button class="theme-btn" type="button" data-theme="badlands" aria-pressed="false">
+            <span class="theme-swatch" style="background:linear-gradient(90deg,#b05834 50%,#7e3e2a 50%)"></span>
+            <span class="theme-name">恶地</span>
+            <span class="theme-state">点击切换</span>
+          </button>
+          <button class="theme-btn" type="button" data-theme="lush_caves" aria-pressed="false">
+            <span class="theme-swatch" style="background:linear-gradient(90deg,#48703e 50%,#2c3428 50%)"></span>
+            <span class="theme-name">繁茂洞穴</span>
+            <span class="theme-state">点击切换</span>
+          </button>
+          <button class="theme-btn" type="button" data-theme="amethyst" aria-pressed="false">
+            <span class="theme-swatch" style="background:linear-gradient(90deg,#7a62ac 50%,#3a344e 50%)"></span>
+            <span class="theme-name">紫水晶洞</span>
+            <span class="theme-state">点击切换</span>
+          </button>
+          <button class="theme-btn" type="button" data-theme="mangrove" aria-pressed="false">
+            <span class="theme-swatch" style="background:linear-gradient(90deg,#543830 50%,#2c3e2e 50%)"></span>
+            <span class="theme-name">红树林</span>
+            <span class="theme-state">点击切换</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="start">
+      <div class="wrap">
+        <p class="section-kicker">START</p>
+        <h2>三步进游戏</h2>
+        <p class="section-lead">不需要先装 Java，也不需要自己拼授权地址。</p>
+        <div class="steps" data-reveal>
+          <article class="card">
+            <p class="step-num">01</p>
+            <h3>放好启动器</h3>
+            <p>下载完成后直接打开即可，无需安装。</p>
+          </article>
+          <article class="card">
+            <p class="step-num">02</p>
+            <h3>选登录方式</h3>
+            <p>离线、微软正版或 LittleSkin。微软登录在窗口内完成，授权回跳由启动器截获。</p>
+          </article>
+          <article class="card">
+            <p class="step-num">03</p>
+            <h3>装版本或导入包</h3>
+            <p>选择原版并加加载器，或直接导入整合包。Java 会按版本自动就位。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="download">
+      <div class="wrap">
+        <p class="section-kicker">DOWNLOAD</p>
+        <h2>获取 CBL</h2>
+        <div class="download-panel">
+          <div>
+            <p>当前可用产物：PyInstaller 构建的 Windows x64 便携包。把 exe 放到任意文件夹即可运行。</p>
+            <p class="download-note">本页直链需要先把 <code>CBL_Launcher.exe</code> 放进 <code>website/downloads/</code>，或运行 <code>python tools/build_release.py</code> 让构建脚本自动投放；目录说明见 <a href="./downloads/README.txt"><code>website/downloads/README.txt</code></a>。该目录为空时，点击下载按钮会提示缺少文件。</p>
+            <p id="download-status" role="status" hidden></p>
+          </div>
+          <div>
+            <a class="btn btn-accent" id="download-btn" href="./downloads/CBL_Launcher.exe" download>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/>
+              </svg>
+              下载 CBL_Launcher.exe
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section legal" id="legal">
+      <div class="wrap">
+        <p class="section-kicker">LEGAL</p>
+        <h2>使用与合规</h2>
+        <p>CBL Cube Launcher 是开源的本地启动辅助工具，与 Mojang Studios、Microsoft、网易及其关联方不存在授权、代理或隶属关系。Minecraft 是 Mojang Studios 的注册商标。</p>
+        <p>游戏本体由用户设备从 Mojang / Microsoft 官方或用户选择的镜像下载。本软件不托管、不缓存、不再分发游戏客户端。离线模式仅供已拥有正版许可的用户在无网环境本地测试，不得用于规避验证。</p>
+        <p>Forge、Fabric、Quilt、NeoForge、整合包与模组均由各自作者发布，CBL 不做推荐或担保。未成年人应在监护人同意下使用。</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <p>CBL Cube Launcher · 2026 · 本地发布页</p>
+      <p>Minecraft 相关权利归其权利人所有</p>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js" defer></script>
+  <script src="./assets/js/main.js" defer></script>
+</body>
+</html>

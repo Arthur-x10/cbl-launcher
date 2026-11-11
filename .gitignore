@@ -1,0 +1,43 @@
+# ── 构建产物 ──
+build/
+dist/
+dist_nuitka/
+*.exe
+*.exe.bak-*
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ── 游戏数据与运行时（体积大、与源码无关） ──
+.minecraft/
+test/
+logs/
+
+# ── 本地配置与凭据：绝不入库 ──
+config.json
+config.json.bak
+*.corrupt-*
+.env
+.env.*
+*.key
+*.pem
+
+# ── 审查 / 临时产物 ──
+.review/
+*.part
+*.part.*
+*.lzma
+nuitka-crash-report.xml
+pyarmor.bug.log
+
+# ── 网站投放包 ──
+website/downloads/*.exe
+
+# ── 系统 ──
+.DS_Store
+Thumbs.db
+desktop.ini
