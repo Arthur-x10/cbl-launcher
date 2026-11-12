@@ -46,9 +46,10 @@ from ui.widgets.common import (
     console_sheet,
     friendly_error,
 )
+from ui.widgets.crafting import CraftingBench
 from ui.widgets.icons import nav_icon
 from ui.widgets.progress_dialog import ProgressDialog
-from ui.tokens import SPACE_XL, SPACE_LG, SPACE_MD, SPACE_SM, HIT_MIN
+from ui.tokens import SPACE_XL, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XS, HIT_MIN
 
 # 树节点数据角色
 ROLE_PROVIDER = Qt.ItemDataRole.UserRole + 1
@@ -455,53 +456,19 @@ class LibraryPage(QWidget):
     # ── CAP_MODLOADER ──
 
     def _build_loader(self):
+        """这个实例是用什么材料合成的 —— 只读合成台。"""
         w = QWidget()
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, SPACE_SM, 0, 0)
         lay.setSpacing(SPACE_SM)
 
         head = QHBoxLayout()
-        head.addWidget(self._sec("安装加载器"))
+        head.addWidget(self._sec("这个实例的材料"))
         head.addStretch()
-        self.loader_query_btn = QPushButton(t("common.query"))
-        self.loader_query_btn.setFixedHeight(HIT_MIN)
-        self.loader_query_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.loader_query_btn.clicked.connect(self._query_loaders)
-        head.addWidget(self.loader_query_btn)
         lay.addLayout(head)
 
-        self.loader_combos = {}
-        self.loader_install_btns = {}
-        for key, label in _LOADERS:
-            row = QHBoxLayout()
-            row.setSpacing(SPACE_SM)
-            lbl = QLabel(label)
-            lbl.setObjectName("fieldLabel")
-            lbl.setFixedWidth(72)
-            row.addWidget(lbl)
-            combo = QComboBox()
-            combo.setFixedHeight(HIT_MIN)
-            combo.setPlaceholderText("点「查询」获取列表")
-            combo.setAccessibleName(label + " 版本")
-            combo.currentIndexChanged.connect(
-                lambda _i, k=key: self._sync_loader_install_state(k)
-            )
-            row.addWidget(combo, 1)
-            btn = QPushButton(t("common.install"))
-            btn.setObjectName("btnPrimary")
-            btn.setFixedHeight(HIT_MIN)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setEnabled(False)
-            btn.clicked.connect(lambda _c=False, k=key: self._install_loader(k))
-            row.addWidget(btn)
-            self.loader_combos[key] = combo
-            self.loader_install_btns[key] = btn
-            lay.addLayout(row)
-
-        neo_hint = QLabel("NeoForge：需要 1.20.2+；1.20.1 请改用 Forge。")
-        neo_hint.setObjectName("mutedLabel")
-        neo_hint.setWordWrap(True)
-        lay.addWidget(neo_hint)
+        self.detail_bench = CraftingBench(read_only=True)
+        lay.addWidget(self.detail_bench)
 
         self.loader_status = QLabel("")
         self.loader_status.setObjectName("statusLabel")
@@ -655,17 +622,38 @@ class LibraryPage(QWidget):
         head.addWidget(back)
         lay.addLayout(head)
 
+        # 安装页内容只会越来越长（版本列表 + 合成台 + 材料行）。
+        # 不放进滚动区的话，超出高度的部分不会滚动 —— Qt 让子控件画到框外，
+        # 表现就是「合成台把版本列表压住」「材料行看不见」。
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setObjectName("scrollArea")
+        scroll.setAutoFillBackground(False)
+        scroll.viewport().setAutoFillBackground(False)
+
+        body = QWidget()
+        body.setObjectName("scrollBody")
+        body.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        body.setAutoFillBackground(False)
+        bl = QVBoxLayout(body)
+        bl.setContentsMargins(0, 0, 0, 0)
+        bl.setSpacing(SPACE_MD)
+
         self.inst_provider = QComboBox()
         self.inst_provider.setFixedHeight(HIT_MIN)
         self.inst_provider.setAccessibleName("安装目标产品")
         self.inst_provider.currentIndexChanged.connect(self._on_install_provider)
-        lay.addWidget(labeled_field("产品", self.inst_provider))
+        bl.addWidget(labeled_field("产品", self.inst_provider))
 
         self.inst_stack = QStackedWidget()
         self.inst_stack.addWidget(self._build_install_remote())   # 0
         self.inst_stack.addWidget(self._build_install_server())   # 1
         self.inst_stack.addWidget(self._build_install_store())    # 2
-        lay.addWidget(self.inst_stack, 1)
+        bl.addWidget(self.inst_stack, 1)
+
+        scroll.setWidget(body)
+        lay.addWidget(scroll, 1)
 
         self.inst_status = QLabel("")
         self.inst_status.setObjectName("statusLabel")
@@ -698,41 +686,26 @@ class LibraryPage(QWidget):
         lay.addLayout(flt)
 
         self.remote_list = QListWidget()
+        self.remote_list.setMinimumHeight(170)
+        # 列表不再无上限地吃掉版面：剩下的高度留给下面的合成台（材料版本行必须看得见）
+        self.remote_list.setMaximumHeight(240)
         self.remote_list.setAccessibleName("可下载版本")
         self.remote_list.currentItemChanged.connect(self._on_remote_sel)
-        lay.addWidget(self.remote_list, 1)
+        lay.addWidget(self.remote_list, 0)
 
-        self.inst_loader_frame = QWidget()
-        lf = QVBoxLayout(self.inst_loader_frame)
-        lf.setContentsMargins(0, 0, 0, 0)
-        lf.setSpacing(SPACE_SM)
-        opt = QLabel("可选：同时安装加载器")
-        opt.setObjectName("fieldLabel")
-        lf.addWidget(opt)
-
-        lrow = QHBoxLayout()
-        lrow.setSpacing(SPACE_SM)
-        self.inst_loader_type = QComboBox()
-        self.inst_loader_type.addItem("不安装加载器", "none")
-        for key, label in _LOADERS:
-            self.inst_loader_type.addItem(label, key)
-        self.inst_loader_type.setFixedHeight(HIT_MIN)
-        self.inst_loader_type.currentIndexChanged.connect(self._on_inst_loader_type)
-        lrow.addWidget(self.inst_loader_type, 1)
-        self.inst_loader_query = QPushButton("查询可用版本")
-        self.inst_loader_query.setFixedHeight(HIT_MIN)
-        self.inst_loader_query.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.inst_loader_query.hide()
-        self.inst_loader_query.clicked.connect(self._query_inst_loaders)
-        lrow.addWidget(self.inst_loader_query)
-        lf.addLayout(lrow)
-
-        self.inst_loader_ver = QComboBox()
-        self.inst_loader_ver.setFixedHeight(HIT_MIN)
-        self.inst_loader_ver.setPlaceholderText("先查询可用版本")
-        self.inst_loader_ver.hide()
-        lf.addWidget(self.inst_loader_ver)
-        lay.addWidget(self.inst_loader_frame)
+        # 合成台：所有加载器都摆在明面上，放进同一个实例的组合会被实时校验
+        self.inst_bench_frame = QWidget()
+        bf = QVBoxLayout(self.inst_bench_frame)
+        bf.setContentsMargins(0, 0, 0, 0)
+        bf.setSpacing(SPACE_XS)
+        hint = QLabel("可选：往下加水。同一实例只能有一个主加载器，附加层会按官方说明校验。")
+        hint.setObjectName("mutedLabel")
+        hint.setWordWrap(True)
+        bf.addWidget(hint)
+        self.bench = CraftingBench()
+        self.bench.needOptions.connect(self._on_bench_need_options)
+        bf.addWidget(self.bench)
+        lay.addWidget(self.inst_bench_frame)
 
         bot = QHBoxLayout()
         bot.addStretch()
@@ -1025,13 +998,17 @@ class LibraryPage(QWidget):
         # ── CAP_MODLOADER ──
         self.loader_frame.setVisible(CAP_MODLOADER in caps)
         if CAP_MODLOADER in caps:
-            for combo in self.loader_combos.values():
-                combo.blockSignals(True)
-                combo.clear()
-                combo.blockSignals(False)
-            for key in self.loader_install_btns:
-                self.loader_install_btns[key].setEnabled(False)
-            self.loader_status.setText("")
+            from core.providers.java import combos as _combos
+            mc_ver = _combos.mc_version_of(inst.version_id)
+            chosen = _combos.detect_from_version_id(inst.version_id)
+            self.detail_bench.set_read_only_state(mc_ver, chosen)
+            clashes = [i for i in _combos.check_combo(mc_ver, chosen)
+                       if i.level in ("blocked", "warn")]
+            if clashes:
+                self._set_stats(self.loader_status,
+                                "；".join(i.reason for i in clashes), _DANGER)
+            else:
+                self.loader_status.setText("")
 
         # ── Mods：CAP_PACK_IMPORT + provider 提供 list_mods ──
         has_mods = CAP_PACK_IMPORT in caps and callable(getattr(p, "list_mods", None))
@@ -1491,122 +1468,6 @@ class LibraryPage(QWidget):
 
     # ═══════════════ 加载器（CAP_MODLOADER） ═══════════════
 
-    def _sync_loader_install_state(self, key):
-        btn = self.loader_install_btns.get(key)
-        combo = self.loader_combos.get(key)
-        if btn is not None and combo is not None:
-            # 隐藏的 QComboBox 不会自动选中第一项，currentIndex 可能是 -1，
-            # 只判断 count() 会得到一个永远点不亮的安装按钮。
-            btn.setEnabled(combo.count() > 0 and combo.currentIndex() >= 0)
-
-    def _query_loaders(self):
-        inst = self._sel_inst
-        if inst is None:
-            return
-        p = self._provider(inst.provider)
-        options = getattr(p, "loader_options", None) if p is not None else None
-        if not callable(options):
-            self._set_stats(self.loader_status, "该产品不支持加载器安装。", _DANGER)
-            return
-        mc_ver = inst.version_id
-        self.loader_query_btn.setEnabled(False)
-        self.loader_query_btn.setText("查询中…")
-        self._set_stats(self.loader_status, "正在查询 " + mc_ver + " 的加载器版本…", _MUTED)
-
-        def task():
-            return options(mc_ver)
-
-        if not self._spawn("loader", task, self._loaders_loaded):
-            self.loader_query_btn.setEnabled(True)
-            self.loader_query_btn.setText(t("common.query"))
-
-    def _loaders_loaded(self, payload, err):
-        self.loader_query_btn.setEnabled(True)
-        self.loader_query_btn.setText(t("common.query"))
-        if err:
-            self._set_stats(self.loader_status, "查询失败：" + err, _DANGER)
-            return
-        opts = payload if isinstance(payload, dict) else {}
-        total = 0
-        for key, _label in _LOADERS:
-            combo = self.loader_combos[key]
-            versions = list(opts.get(key) or [])[:40]
-            combo.blockSignals(True)
-            combo.clear()
-            for v in versions:
-                combo.addItem(str(v), str(v))
-            if versions:
-                combo.setCurrentIndex(0)
-            combo.blockSignals(False)
-            self._sync_loader_install_state(key)
-            total += len(versions)
-        if total:
-            self._set_stats(self.loader_status, "共找到 {} 个加载器版本。".format(total), _OK)
-        else:
-            self._set_stats(
-                self.loader_status,
-                "该版本没有可用加载器（NeoForge 需要 1.20.2+；1.20.1 请改用 Forge）。",
-                _DANGER)
-
-    def _install_loader(self, key):
-        inst = self._sel_inst
-        if inst is None:
-            return
-        p = self._provider(inst.provider)
-        install = getattr(p, "install_loader", None) if p is not None else None
-        if not callable(install):
-            self._set_stats(self.loader_status, "该产品不支持加载器安装。", _DANGER)
-            return
-        combo = self.loader_combos[key]
-        loader_ver = combo.currentData()
-        if not loader_ver:
-            return
-        name = dict(_LOADERS).get(key, key)
-        mc_ver = inst.version_id
-        pid = inst.provider
-        holder = {}
-
-        def task(cb):
-            holder["vid"] = install(mc_ver, key, str(loader_ver), cb)
-
-        self.loader_install_btns[key].setEnabled(False)
-        dlg = ProgressDialog("安装 " + name + " " + str(loader_ver), task, self)
-        dlg.start()
-        self._sync_loader_install_state(key)
-
-        if dlg.was_cancelled:
-            self._set_stats(self.loader_status, "已取消安装 " + name, _MUTED)
-            return
-        if not dlg.success:
-            self._set_stats(self.loader_status,
-                            name + " 安装失败：" + friendly_error(dlg.error_msg), _DANGER)
-            QMessageBox.warning(self, name + " 安装失败", friendly_error(dlg.error_msg))
-            return
-
-        new_vid = str(holder.get("vid") or "")
-        self._set_stats(
-            self.loader_status, name + " 安装完成：" + (new_vid or str(loader_ver)), _OK)
-        if not new_vid:
-            self.refresh()
-            return
-        ans = QMessageBox.question(
-            self, "安装完成",
-            name + " 已装好（" + new_vid + "）。\n要为新版本创建一个实例吗？",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        if ans == QMessageBox.StandardButton.Yes and self.store is not None:
-            try:
-                inst2 = self.store.create(pid, new_vid, name=new_vid)
-            except Exception as e:
-                QMessageBox.warning(self, "创建实例失败", str(e))
-            else:
-                self.refresh()
-                self._show_detail(inst2)
-                self._sync_tree_selection(inst2.id)
-                return
-        self.refresh()
-
-    # ═══════════════ Mods / 内容包 / 控制台 ═══════════════
-
     def _open_mods(self):
         inst = self._sel_inst
         if inst is None:
@@ -1865,7 +1726,12 @@ class LibraryPage(QWidget):
             return
 
         self.inst_stack.setCurrentIndex(0)
-        self.inst_loader_frame.setVisible(CAP_MODLOADER in caps)
+        self.inst_bench_frame.setVisible(CAP_MODLOADER in caps)
+        bench = getattr(self, "bench", None)
+        if bench is not None:
+            cur = self.remote_list.currentItem()
+            version = cur.data(Qt.ItemDataRole.UserRole) if cur is not None else None
+            bench.set_version(str(getattr(version, "id", "") or ""), force=True)
         self._load_remote()
 
     def _load_remote(self, force=False):
@@ -1985,6 +1851,9 @@ class LibraryPage(QWidget):
             return
         version = cur.data(Qt.ItemDataRole.UserRole)
         vid = str(getattr(version, "id", "") or "")
+        bench = getattr(self, "bench", None)
+        if bench is not None:
+            bench.set_version(vid)
         installed = vid in (getattr(self, "_installed_ids", set()) or set())
         if installed:
             self.install_go_btn.setText("创建实例")
@@ -2008,62 +1877,27 @@ class LibraryPage(QWidget):
         if btn is not None:
             btn.setEnabled(can_uninstall)
 
-    def _on_inst_loader_type(self, _index=None):
-        ltype = self.inst_loader_type.currentData() or "none"
-        show = ltype != "none"
-        self.inst_loader_query.setVisible(show)
-        self.inst_loader_ver.setVisible(show)
-        self.inst_loader_ver.clear()
-
-    def _query_inst_loaders(self):
+    def _on_bench_need_options(self, mc_ver):
+        """合成台要某个 MC 版本的加载器版本表 —— 自己去取，不再设「查询」按钮。"""
         pid = self._install_pid
         p = self._provider(pid)
         options = getattr(p, "loader_options", None) if p is not None else None
-        if not callable(options):
-            self.inst_status.setText("该产品不支持加载器。")
+        if not callable(options) or not mc_ver:
             return
-        cur = self.remote_list.currentItem()
-        if cur is None:
-            QMessageBox.warning(self, "提示", "请先在上方选择一个版本。")
+        if CAP_MODLOADER not in self._caps(pid):
             return
-        version = cur.data(Qt.ItemDataRole.UserRole)
-        mc_ver = str(getattr(version, "id", "") or "")
-        ltype = self.inst_loader_type.currentData() or "none"
-        self.inst_loader_query.setEnabled(False)
-        self.inst_loader_query.setText("查询中…")
-        self.inst_loader_ver.clear()
 
         def task():
             return options(mc_ver)
 
-        if not self._spawn(
-                "loader_install", task,
-                lambda payload, err: self._inst_loaders_loaded(payload, err, ltype)):
-            self.inst_loader_query.setEnabled(True)
-            self.inst_loader_query.setText("查询可用版本")
+        def done(payload, err):
+            if err:
+                self.inst_status.setText("取加载器版本失败：" + friendly_error(err))
+                return
+            self.bench.apply_options(mc_ver, payload)
 
-    def _inst_loaders_loaded(self, payload, err, ltype):
-        self.inst_loader_query.setEnabled(True)
-        self.inst_loader_query.setText("查询可用版本")
-        if err:
-            self.inst_status.setText("查询加载器失败：" + err)
-            return
-        opts = payload if isinstance(payload, dict) else {}
-        versions = list(opts.get(ltype) or [])[:40]
-        self.inst_loader_ver.clear()
-        for v in versions:
-            self.inst_loader_ver.addItem(str(v), str(v))
-        if versions:
-            self.inst_loader_ver.setCurrentIndex(0)
-        name = dict(_LOADERS).get(ltype, ltype)
-        if versions:
-            self.inst_loader_ver.show()
-            self.inst_status.setText("找到 {} 个 {} 版本。".format(len(versions), name))
-        elif ltype == "neoforge":
-            self.inst_status.setText(
-                "此版本没有可用的 NeoForge（需要 1.20.2+；1.20.1 请改用 Forge）。")
-        else:
-            self.inst_status.setText("此版本没有可用的 " + name + "。")
+        self._spawn("loader_install", task, done)
+
 
     def _do_uninstall(self):
         """卸载版本本体（versions/<id>/）。和"删除实例"是两件事。"""
@@ -2155,16 +1989,27 @@ class LibraryPage(QWidget):
             self.inst_status.setText("上次安装不完整，正在补全文件…")
 
         caps = self._caps(pid)
-        loader_type = self.inst_loader_type.currentData() if CAP_MODLOADER in caps else "none"
-        loader_type = loader_type or "none"
-        loader_ver = self.inst_loader_ver.currentData() if loader_type != "none" else None
+        bench = getattr(self, "bench", None)
+        plan = {"loader": "", "loader_version": "", "extra_jars": [], "name": vid}
+        if CAP_MODLOADER in caps and bench is not None:
+            if not bench.can_compose():
+                blocked = [i.reason for i in bench.issues() if i.level == "blocked"]
+                QMessageBox.warning(
+                    self, "这套配方合不出来",
+                    "\n".join(blocked) or "材料还没选全：选中的加载器还没取到版本号。")
+                return
+            plan = bench.install_plan()
+
+        loader_type = plan.get("loader") or "none"
+        loader_ver = plan.get("loader_version") or None
+        extra_jars = [j for j in (plan.get("extra_jars") or []) if j]
+        manual = [m for m in (plan.get("manual") or []) if m]
         name = dict(_LOADERS).get(loader_type, loader_type)
 
         if loader_type != "none" and not loader_ver:
             QMessageBox.warning(
                 self, "还没选加载器版本",
-                "你选了加载器但还没查询可用版本。\n先点「查询可用版本」选一个，"
-                "或把加载器改回「不安装加载器」。")
+                "加载器版本还没取到。等一下版本列表加载完，或把那个槽位取消。")
             return
 
         self.install_go_btn.setEnabled(False)
@@ -2210,11 +2055,13 @@ class LibraryPage(QWidget):
                     final_vid = str(holder.get("vid") or vid)
 
             inst = None
+            inst_name = str(plan.get("name") or "").strip() or final_vid
             if self.store is not None:
                 try:
-                    inst = self.store.create(pid, final_vid, name=final_vid)
+                    inst = self.store.create(pid, final_vid, name=inst_name)
                 except Exception as e:
                     self.inst_status.setText("版本装好了，但建实例失败：" + str(e))
+            placed = self._place_extra_jars(inst, extra_jars) if inst is not None else []
             # 镜像缺文件是常态（1.7.10 的 log4j 配置、老 natives 等），
             # 回退已经发生在请求层，这里只把事实告诉用户，避免"换源反而更慢"的困惑。
             note = ""
@@ -2226,7 +2073,14 @@ class LibraryPage(QWidget):
                     _mirror.clear_fallback_events()
             except Exception:
                 note = ""
-            self.inst_status.setText("安装完成：" + final_vid + note)
+            extra_note = ("（已放入 mods/：" + "、".join(placed) + "）") if placed else ""
+            manual_note = ""
+            if manual:
+                manual_note = ("；" + "、".join(
+                    dict(_LOADERS).get(m, m) if m != "liteloader" else "LiteLoader"
+                    for m in manual) + " 本启动器不代装，需要你手动加进这个版本")
+            self.inst_status.setText(
+                "安装完成：" + final_vid + note + extra_note + manual_note)
             self._remote_cache.pop(pid, None)
             self.refresh()
             if inst is not None:
@@ -2234,6 +2088,31 @@ class LibraryPage(QWidget):
                 self._sync_tree_selection(inst.id)
         finally:
             self.install_go_btn.setEnabled(True)
+
+    def _place_extra_jars(self, inst, jars) -> list:
+        """把用户挑的补丁 jar（OptiFine 之类）放进实例的 mods/，返回文件名列表。"""
+        if inst is None or not jars:
+            return []
+        game_dir = str(getattr(inst, "game_dir", "") or "")
+        if not game_dir:
+            return []
+        import os as _os
+        import shutil as _shutil
+        mods = _os.path.join(game_dir, "mods")
+        placed = []
+        try:
+            _os.makedirs(mods, exist_ok=True)
+        except OSError as e:
+            print(f"[library] 建 mods 目录失败: {e}", file=sys.stderr)
+            return []
+        for src in jars:
+            try:
+                dst = _os.path.join(mods, _os.path.basename(src))
+                _shutil.copy2(src, dst)
+                placed.append(_os.path.basename(src))
+            except OSError as e:
+                print(f"[library] 复制 {src} 失败: {e}", file=sys.stderr)
+        return placed
 
     def _import_server_zip(self):
         pid = self._install_pid
