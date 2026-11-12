@@ -150,6 +150,15 @@ def _report(cb, text: str) -> None:
             pass
 
 
+def _cancel_of(cb):
+    """从 UI 的回调字典里取取消查询函数；没有就返回 None。"""
+    if isinstance(cb, dict):
+        fn = cb.get("isCancelled") or cb.get("is_cancelled")
+    else:
+        fn = getattr(cb, "is_cancelled", None)
+    return fn if callable(fn) else None
+
+
 def _safe_extract(zip_file: zipfile.ZipFile, dest: str) -> None:
     """解压并防 zip slip：每个成员的 realpath 必须落在 dest 里。
 
@@ -521,6 +530,36 @@ class BedrockProvider:
             "data_dir_exists": bool(probe.get("data_dir_exists")),
             "can_download": False,
         }
+
+    # ── 其他获取渠道 ──
+
+    def download_channels(self) -> list:
+        """能真下载的官方安装包（启动器 MSI / GameCore / 教育版）+ 只能给链接的渠道。"""
+        try:
+            from core.providers.bedrock import channels as _ch
+            items = _ch.list_channels()
+            return items + [dict(x, resolved=False, size_text="", url=x.get("url", ""))
+                            for x in _ch.LINKS_ONLY]
+        except Exception as e:  # noqa: BLE001
+            print("[bedrock] 解析下载渠道失败: %s" % e, file=sys.stderr)
+            return []
+
+    def download_channel(self, channel_id: str, dst: str, cb=None) -> str:
+        """下载某个渠道的安装包。返回本地路径。"""
+        from core.providers.bedrock import channels as _ch
+        item = _ch.find_channel(channel_id)
+        if not item:
+            raise LaunchError("没有这个下载渠道：" + str(channel_id))
+        _report(cb, "正在下载 " + (item.get("file_name") or item.get("name") or channel_id))
+        cancel = _cancel_of(cb)
+
+        def progress(done, total):
+            pct = int(done * 100 / total) if total else 0
+            _report(cb, "下载 %s（%d%%，%s / %s）" % (
+                item.get("name") or channel_id, pct,
+                _ch.human_size(done), _ch.human_size(total)))
+
+        return _ch.download(item, dst, progress=progress, cancel=cancel)
 
     def open_store(self, target: str = "pdp") -> tuple:
         """打开商店页（pdp=详情页 / updates=下载与更新）。"""

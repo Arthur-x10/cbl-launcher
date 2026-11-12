@@ -256,7 +256,11 @@ class ServerProvider:
             if downloader is None:
                 from core.download import Downloader
                 downloader = Downloader()
-            cancel = getattr(cb, "is_cancelled", None)
+            cancel = None
+            if isinstance(cb, dict):
+                cancel = cb.get("isCancelled") or cb.get("is_cancelled")
+            else:
+                cancel = getattr(cb, "is_cancelled", None)
 
             def progress(done, total):
                 pct = int(done * 100 / total) if total else 0

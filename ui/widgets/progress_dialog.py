@@ -53,6 +53,9 @@ class WorkerThread(QThread):
             "setStatus": self._on_status,
             "setProgress": self._on_progress,
             "setMax": self._on_max,
+            # 让长任务（大文件下载）能自己查询是否被取消 —— 只靠抛 TaskCancelled
+            # 的话，卡在 read() 里的下载根本收不到信号。
+            "isCancelled": lambda: bool(self._cancelled),
         }
         try:
             self.task_func(cb)

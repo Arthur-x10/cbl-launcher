@@ -823,8 +823,139 @@ class LibraryPage(QWidget):
         row.addWidget(self.store_detect_btn)
         row.addStretch()
         lay.addLayout(row)
+
+        chan_head = QLabel("其他获取渠道")
+        chan_head.setObjectName("fieldLabel")
+        lay.addWidget(chan_head)
+
+        self.chan_box = make_sheet()
+        self.chan_lay = QVBoxLayout(self.chan_box)
+        self.chan_lay.setContentsMargins(SPACE_LG, SPACE_MD, SPACE_LG, SPACE_MD)
+        self.chan_lay.setSpacing(SPACE_SM)
+        self.chan_hint = QLabel("正在解析官方直链…")
+        self.chan_hint.setObjectName("mutedLabel")
+        self.chan_hint.setWordWrap(True)
+        self.chan_lay.addWidget(self.chan_hint)
+        self._chan_rows = []
+        lay.addWidget(self.chan_box)
         lay.addStretch()
         return w
+
+    def _load_channels(self):
+        p = self._provider(self._install_pid)
+        fn = getattr(p, "download_channels", None) if p is not None else None
+        if not callable(fn):
+            self.chan_hint.setText("该产品没有其他下载渠道。")
+            return
+        self.chan_hint.setText("正在解析官方直链…")
+        self._spawn("channels", fn, self._channels_loaded)
+
+    def _channels_loaded(self, payload, err):
+        for row in getattr(self, "_chan_rows", []):
+            row.setParent(None)
+            row.deleteLater()
+        self._chan_rows = []
+        if err:
+            self.chan_hint.setText("解析官方直链失败：" + friendly_error(err))
+            return
+        items = list(payload or [])
+        if not items:
+            self.chan_hint.setText("没有可用的下载渠道。")
+            return
+        self.chan_hint.setText(
+            "下面每条都实测过：能直接下的给直链和体积，只能给链接的写清要什么。"
+            "注意：谁都不能免费给你国际版基岩客户端的游戏本体。")
+        for item in items:
+            row = QWidget()
+            rl = QVBoxLayout(row)
+            rl.setContentsMargins(0, 0, 0, 0)
+            rl.setSpacing(2)
+
+            top = QHBoxLayout()
+            top.setSpacing(SPACE_SM)
+            title = str(item.get("name") or item.get("id") or "")
+            size = str(item.get("size_text") or "")
+            label = QLabel(title + ("　·　" + size if size else ""))
+            label.setStyleSheet("font-weight: 700;")
+            top.addWidget(label)
+            top.addStretch()
+            btn = QPushButton("下载" if item.get("resolved") else "打开")
+            btn.setFixedHeight(HIT_MIN)
+            btn.setMinimumWidth(96)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            cid = str(item.get("id") or "")
+            if item.get("resolved"):
+                btn.clicked.connect(
+                    lambda _c=False, it=dict(item): self._download_channel(it))
+            else:
+                btn.setObjectName("btnBlue")
+                url = str(item.get("url") or "")
+                btn.clicked.connect(
+                    lambda _c=False, u=url: self._open_external(u))
+            top.addWidget(btn)
+            rl.addLayout(top)
+
+            note = QLabel(str(item.get("note") or ""))
+            note.setObjectName("mutedLabel")
+            note.setWordWrap(True)
+            rl.addWidget(note)
+
+            self.chan_lay.addWidget(row)
+            self._chan_rows.append(row)
+
+    def _open_external(self, url):
+        if not url:
+            return
+        try:
+            os.startfile(url)  # noqa: S606 — 打开浏览器
+            self.inst_status.setText("已在浏览器里打开：" + url)
+        except OSError as e:
+            self.inst_status.setText("打不开链接：%s" % e)
+
+    def _download_channel(self, item):
+        cid = str(item.get("id") or "")
+        name = str(item.get("name") or cid)
+        file_name = str(item.get("file_name") or (cid + ".exe"))
+        size = str(item.get("size_text") or "")
+        if size and "GB" in size:
+            ok = QMessageBox.question(
+                self, "确认下载",
+                "这个安装包有 %s，确认现在下载？" % size,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if ok != QMessageBox.StandardButton.Yes:
+                return
+        default = os.path.join(os.path.expanduser("~"), "Downloads", file_name)
+        path, _ = QFileDialog.getSaveFileName(
+            self, "保存 " + name, default, "安装包 (*.exe *.msi);;所有文件 (*)")
+        if not path:
+            return
+        p = self._provider(self._install_pid)
+        fn = getattr(p, "download_channel", None) if p is not None else None
+        if not callable(fn):
+            self.inst_status.setText("该产品不支持下载。")
+            return
+        holder = {}
+
+        def task(cb):
+            holder["path"] = fn(cid, path, cb)
+
+        d = ProgressDialog("下载 " + name, task, self)
+        d.start()
+        if d.was_cancelled:
+            self.inst_status.setText("已取消下载。")
+            return
+        if not d.success:
+            self.inst_status.setText("下载失败：" + friendly_error(d.error_msg))
+            QMessageBox.warning(self, "下载失败", friendly_error(d.error_msg))
+            return
+        done = str(holder.get("path") or path)
+        self.inst_status.setText("已下载：" + done)
+        if QMessageBox.question(
+                self, "下载完成",
+                "已经保存到：\n%s\n\n现在打开它吗？" % done,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        ) == QMessageBox.StandardButton.Yes:
+            self._open_external(done)
 
     def _load_store_state(self):
         p = self._provider(self._install_pid)
@@ -838,6 +969,7 @@ class LibraryPage(QWidget):
         self.store_meta.setText("")
         self.store_local.setText("")
         self._spawn("store_state", fn, self._store_state_loaded)
+        self._load_channels()
 
     def _store_state_loaded(self, payload, err):
         if err:
