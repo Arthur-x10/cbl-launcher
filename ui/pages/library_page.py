@@ -193,7 +193,17 @@ class LibraryPage(QWidget):
         self.install_btn.setFixedHeight(HIT_MIN + 2)
         self.install_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.install_btn.clicked.connect(lambda: self._show_create("download"))
-        row1.addWidget(self.install_btn)
+        row1.addWidget(self.install_btn, 2)
+
+        self.import_pack_btn = QPushButton("导入整合包")
+        self.import_pack_btn.setObjectName("btnBlue")
+        self.import_pack_btn.setFixedHeight(HIT_MIN + 2)
+        self.import_pack_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.import_pack_btn.setToolTip(
+            "选一个整合包（.mrpack / CurseForge zip / MultiMC zip / 带 mods 的通用 zip），"
+            "按里面的清单装好版本和加载器，直接建一个实例。")
+        self.import_pack_btn.clicked.connect(self._import_modpack)
+        row1.addWidget(self.import_pack_btn, 1)
         lay.addLayout(row1)
 
         self.del_btn = QPushButton(t("library.delete"))
@@ -566,15 +576,13 @@ class LibraryPage(QWidget):
         self.create_source.setFixedHeight(HIT_MIN)
         self.create_source.setAccessibleName("实例来源")
         self.create_source.addItem("装一个版本（下载 + 合成）", "download")
-        self.create_source.addItem("导入整合包（.mrpack / zip）", "modpack")
         self.create_source.addItem("从已安装版本创建", "existing")
         self.create_source.currentIndexChanged.connect(self._on_create_source)
         bl.addWidget(labeled_field("从哪儿开始", self.create_source))
 
         self.create_stack = QStackedWidget()
         self.create_stack.addWidget(self._build_source_download())   # 0
-        self.create_stack.addWidget(self._build_source_modpack())    # 1
-        self.create_stack.addWidget(self._build_source_existing())   # 2
+        self.create_stack.addWidget(self._build_source_existing())   # 1
         bl.addWidget(self.create_stack, 1)
 
         scroll.setWidget(body)
@@ -607,51 +615,132 @@ class LibraryPage(QWidget):
         lay.addWidget(self.inst_stack, 1)
         return w
 
-    # ── 来源二：导入整合包 ──
+    # ── 导入整合包（左栏独立按钮，不进「新建实例」流程） ──
 
-    def _build_source_modpack(self):
-        w = QWidget()
-        lay = QVBoxLayout(w)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(SPACE_MD)
+    def _modpack_provider(self):
+        try:
+            for p in providers.all_providers():
+                if callable(getattr(p, "install_modpack", None)):
+                    return p
+        except Exception:
+            pass
+        return None
 
-        tip = QLabel(
-            "支持 Modrinth（.mrpack）、CurseForge、MultiMC / Prism、通用 .zip。"
-            "导入时会照着整合包里的清单把 MC 版本、加载器、mod 都装好，然后直接建一个实例 —— "
-            "不需要先装版本再挑一遍。")
-        tip.setObjectName("mutedLabel")
-        tip.setWordWrap(True)
-        lay.addWidget(tip)
+    def _import_modpack(self):
+        p = self._modpack_provider()
+        if p is None:
+            QMessageBox.information(self, "暂不可用", "当前没有能安装整合包的产品。")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择整合包", "",
+            "整合包 (*.mrpack *.zip);;Modrinth (*.mrpack);;ZIP (*.zip);;所有文件 (*)")
+        if not path:
+            return
+        detect = getattr(p, "detect_modpack", None)
+        self._pending_modpack = path
+        self.import_pack_btn.setEnabled(False)
+        self.inst_status.setText("正在识别整合包…")
 
-        row = QHBoxLayout()
-        self.modpack_btn = QPushButton("选择整合包文件…")
-        self.modpack_btn.setObjectName("btnBlue")
-        self.modpack_btn.setFixedHeight(HIT_MIN + 2)
-        self.modpack_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.modpack_btn.clicked.connect(self._pick_modpack)
-        row.addWidget(self.modpack_btn)
-        row.addStretch()
-        lay.addLayout(row)
+        def task():
+            if callable(detect):
+                return detect(path)
+            return "unknown", {}
 
-        self.modpack_info = QLabel("还没有选择文件。")
-        self.modpack_info.setObjectName("statusLabel")
-        self.modpack_info.setWordWrap(True)
-        lay.addWidget(self.modpack_info)
+        self._spawn("modpack_detect", task, self._modpack_ready)
 
-        row2 = QHBoxLayout()
-        self.modpack_go_btn = QPushButton("导入并创建实例")
-        self.modpack_go_btn.setObjectName("btnPrimary")
-        self.modpack_go_btn.setFixedHeight(HIT_MIN + 2)
-        self.modpack_go_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.modpack_go_btn.setEnabled(False)
-        self.modpack_go_btn.clicked.connect(self._do_import_modpack)
-        row2.addWidget(self.modpack_go_btn)
-        row2.addStretch()
-        lay.addLayout(row2)
+    def _modpack_ready(self, payload, err):
+        self.import_pack_btn.setEnabled(True)
+        path = str(getattr(self, "_pending_modpack", "") or "")
+        if err:
+            self.inst_status.setText("")
+            QMessageBox.warning(self, "识别失败", friendly_error(err))
+            return
+        fmt, info = payload if isinstance(payload, tuple) else ("unknown", {})
+        info = info if isinstance(info, dict) else {}
+        pretty = {
+            "mrpack": "Modrinth 整合包", "curseforge": "CurseForge 整合包",
+            "mmc": "MultiMC / Prism 整合包", "generic": "通用 zip 整合包",
+        }.get(str(fmt), "")
+        if not pretty:
+            self.inst_status.setText("")
+            QMessageBox.warning(
+                self, "认不出来",
+                "这个文件不是能识别的整合包。\n\n"
+                "支持：.mrpack（Modrinth）、CurseForge zip、MultiMC / Prism zip、"
+                "以及根目录带 mods/ 或 config/ 的通用 zip。")
+            return
 
-        self._modpack_path = ""
-        lay.addStretch()
-        return w
+        lines = ["类型：" + pretty]
+        if info.get("name"):
+            lines.append("名称：" + str(info["name"]))
+        if info.get("version"):
+            lines.append("整合包版本：" + str(info["version"]))
+        if info.get("mc_version"):
+            lines.append("Minecraft：" + str(info["mc_version"]))
+        if info.get("loader"):
+            lines.append("加载器：" + str(info["loader"]))
+        if info.get("mod_count"):
+            lines.append("mod 数量：%d" % int(info["mod_count"]))
+        if info.get("summary"):
+            lines.append("简介：" + str(info["summary"])[:120])
+        lines.append("")
+        lines.append("导入会按清单装好版本、加载器和 mod，然后建一个实例。继续？")
+        if QMessageBox.question(
+                self, "导入整合包", "\n".join(lines),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        ) != QMessageBox.StandardButton.Yes:
+            self.inst_status.setText("已取消。")
+            return
+        self._run_modpack_import(path)
+
+    def _run_modpack_import(self, path):
+        p = self._modpack_provider()
+        importer = getattr(p, "install_modpack", None) if p is not None else None
+        if not callable(importer):
+            self.inst_status.setText("当前没有能装整合包的产品。")
+            return
+        pid = str(getattr(p, "id", "") or "")
+        holder = {}
+
+        def task(cb):
+            holder["vid"] = importer(path, cb)
+
+        self.import_pack_btn.setEnabled(False)
+        try:
+            d = ProgressDialog("导入整合包", task, self)
+            d.start()
+            if d.was_cancelled:
+                self.inst_status.setText("已取消导入。")
+                return
+            if not d.success:
+                self.inst_status.setText("导入失败。")
+                QMessageBox.warning(self, "导入失败", friendly_error(d.error_msg))
+                return
+        finally:
+            self.import_pack_btn.setEnabled(True)
+
+        vid = str(holder.get("vid") or "")
+        if not vid:
+            self.inst_status.setText("整合包内容已展开，但没有确定的启动版本。")
+            QMessageBox.information(
+                self, "还差一步",
+                "整合包的文件已经放进 .minecraft 了，但它没告诉我们该启动哪个版本。\n\n"
+                "用「＋ 新建实例 → 装一个版本」补一个对应版本，"
+                "再用「从已安装版本创建」建实例。")
+            self.refresh()
+            return
+
+        inst = None
+        if self.store is not None:
+            try:
+                inst = self.store.create(pid, vid, name=vid)
+            except Exception as e:
+                self.inst_status.setText("装好了，但建实例失败：" + str(e))
+        self.inst_status.setText("整合包导入完成：" + vid)
+        self.refresh()
+        if inst is not None:
+            self._show_detail(inst)
+            self._sync_tree_selection(inst.id)
 
     # ── 来源三：从已安装版本创建 ──
 
@@ -1878,7 +1967,7 @@ class LibraryPage(QWidget):
     def _on_create_source(self, _index=None):
         src = str(self.create_source.currentData() or "download")
         self.create_stack.setCurrentIndex(
-            {"download": 0, "modpack": 1, "existing": 2}.get(src, 0))
+            {"download": 0, "existing": 1}.get(src, 0))
         self.inst_status.setText("")
         if src == "download":
             self._refresh_install_targets()
@@ -1908,114 +1997,6 @@ class LibraryPage(QWidget):
         self.store_detect_btn.setEnabled(True)
         self.inst_provider.setCurrentIndex(0)
         self._on_install_provider(0)
-
-    # ── 来源二：导入整合包 ──
-
-    def _modpack_provider(self):
-        try:
-            for p in providers.all_providers():
-                if callable(getattr(p, "install_modpack", None)):
-                    return p
-        except Exception:
-            pass
-        return None
-
-    def _pick_modpack(self):
-        p = self._modpack_provider()
-        if p is None:
-            self.modpack_info.setText("当前没有能装整合包的产品。")
-            return
-        path, _ = QFileDialog.getOpenFileName(
-            self, "选择整合包", "",
-            "整合包 (*.mrpack *.zip);;Modrinth (*.mrpack);;ZIP (*.zip);;所有文件 (*)")
-        if not path:
-            return
-        self._modpack_path = path
-        self.modpack_go_btn.setEnabled(False)
-        self.modpack_info.setText("正在识别格式…")
-        detect = getattr(p, "detect_modpack", None)
-
-        def task():
-            if callable(detect):
-                return detect(path)
-            return "unknown", {"name": os.path.basename(path), "format": "unknown"}
-
-        self._spawn("modpack_detect", task, self._modpack_detected)
-
-    def _modpack_detected(self, payload, err):
-        if err:
-            self.modpack_info.setText("识别失败：" + friendly_error(err))
-            return
-        fmt, info = payload if isinstance(payload, tuple) else ("unknown", {})
-        info = info if isinstance(info, dict) else {}
-        name = {
-            "mrpack": "Modrinth", "curseforge": "CurseForge",
-            "mmc": "MultiMC / Prism", "generic": "通用 zip",
-        }.get(str(fmt), "认不出来的格式")
-        if fmt == "unknown":
-            self.modpack_info.setText(
-                "这个文件不是能识别的整合包（支持 .mrpack / CurseForge zip / MultiMC zip / 带 mods 的通用 zip）。")
-            return
-        bits = [str(info.get("name") or os.path.basename(self._modpack_path))]
-        if info.get("version"):
-            bits.append("版本 " + str(info["version"]))
-        bits.append(name)
-        if info.get("mc_version"):
-            bits.append("MC " + str(info["mc_version"]))
-        if info.get("loader"):
-            bits.append(str(info["loader"]))
-        if info.get("mod_count"):
-            bits.append("%d 个 mod" % int(info["mod_count"]))
-        self.modpack_info.setText("　·　".join(bits))
-        self.modpack_go_btn.setEnabled(True)
-
-    def _do_import_modpack(self):
-        path = str(getattr(self, "_modpack_path", "") or "")
-        if not path:
-            return
-        p = self._modpack_provider()
-        importer = getattr(p, "install_modpack", None) if p is not None else None
-        if not callable(importer):
-            self.modpack_info.setText("当前没有能装整合包的产品。")
-            return
-        pid = str(getattr(p, "id", "") or "")
-        holder = {}
-
-        def task(cb):
-            holder["vid"] = importer(path, cb)
-
-        self.modpack_go_btn.setEnabled(False)
-        try:
-            d = ProgressDialog("导入整合包", task, self)
-            d.start()
-            if d.was_cancelled:
-                self.modpack_info.setText("已取消导入。")
-                return
-            if not d.success:
-                self.modpack_info.setText("导入失败：" + friendly_error(d.error_msg))
-                QMessageBox.warning(self, "导入失败", friendly_error(d.error_msg))
-                return
-        finally:
-            self.modpack_go_btn.setEnabled(True)
-
-        vid = str(holder.get("vid") or "")
-        if not vid:
-            self.modpack_info.setText(
-                "整合包文件已经展开了，但它没有指定要启动哪个版本。"
-                "回「装一个版本」补一个对应版本，再用「从已安装版本创建」建实例。")
-            self.refresh()
-            return
-        inst = None
-        if self.store is not None:
-            try:
-                inst = self.store.create(pid, vid, name=vid)
-            except Exception as e:
-                self.modpack_info.setText("装好了，但建实例失败：" + str(e))
-        self.modpack_info.setText("导入完成：" + vid)
-        self.refresh()
-        if inst is not None:
-            self._show_detail(inst)
-            self._sync_tree_selection(inst.id)
 
     # ── 来源三：从已安装版本创建 ──
 
