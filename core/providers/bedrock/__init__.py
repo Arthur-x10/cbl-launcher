@@ -492,8 +492,50 @@ class BedrockProvider:
             },
         )]
 
+    # ── 商店元数据（只读，不承诺能下载） ──
+
+    def store_info(self) -> dict:
+        """商店里这个产品的公开元数据。拿不到就返回 {}，不抛。"""
+        try:
+            from core.providers.bedrock import store as _store
+            return _store.fetch_info()
+        except Exception as e:  # noqa: BLE001 — 商店接口挂了不该影响启动器
+            print("[bedrock] 取商店信息失败: %s" % e, file=sys.stderr)
+            return {}
+
+    def store_state(self) -> dict:
+        """商店元数据 + 本机安装状态，给「商店页」那一栏用。"""
+        info = self.store_info()
+        probe = self.probe_detail()
+        return {
+            "title": info.get("title") or "Minecraft for Windows",
+            "size_text": info.get("size_text") or "",
+            "updated_date": info.get("updated_date") or "",
+            "package_formats": info.get("package_formats") or [],
+            "market": info.get("market") or "",
+            "apps_url": info.get("apps_url") or "",
+            "installed": bool(probe.get("installed")),
+            "local_version": probe.get("version") or "",
+            "package_full_name": probe.get("package_full_name") or "",
+            "data_dir": probe.get("data_dir") or "",
+            "data_dir_exists": bool(probe.get("data_dir_exists")),
+            "can_download": False,
+        }
+
+    def open_store(self, target: str = "pdp") -> tuple:
+        """打开商店页（pdp=详情页 / updates=下载与更新）。"""
+        try:
+            from core.providers.bedrock import store as _store
+            uri = _store.STORE_UPDATES if str(target).lower() == "updates" else _store.STORE_PDP
+            return _store.open_store(uri)
+        except Exception as e:  # noqa: BLE001
+            return False, "打不开商店页：%s" % e
+
     def install(self, version, cb=None):
-        raise LaunchError("基岩版由 Microsoft Store 安装与更新，启动器只负责启动")
+        raise LaunchError(
+            "基岩版客户端只能由 Microsoft Store 交付：商店里是加密的 MSIXVC 容器，"
+            "下载需要你自己的账号持有这个游戏的许可，第三方启动器拿不到可安装的包。"
+            "请用「在商店中打开」按钮安装或更新。")
 
     def uninstall(self, version_id: str):
         return False, "基岩版请在 Windows 设置里卸载"

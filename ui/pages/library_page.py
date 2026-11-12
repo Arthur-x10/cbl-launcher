@@ -737,7 +737,10 @@ class LibraryPage(QWidget):
         lay.setSpacing(SPACE_MD)
         lay.addStretch()
 
-        tip = QLabel("导入一个服务端压缩包（.zip），导入后会自动注册成实例。")
+        tip = QLabel(
+            "官方 BDS 版本在上面的版本列表里 —— 选中直接点「安装」，"
+            "启动器会下载 Mojang 官方 zip、解压、找到 bedrock_server.exe 并注册成实例。"
+            "这里留给已经在别处下好 zip 的情况。")
         tip.setObjectName("mutedLabel")
         tip.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tip.setWordWrap(True)
@@ -757,20 +760,61 @@ class LibraryPage(QWidget):
         return w
 
     def _build_install_store(self):
+        """商店托管的游戏：查得到商店状态、送得进商店页，但下载不了包。"""
         w = QWidget()
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(SPACE_MD)
-        lay.addStretch()
 
-        self.store_tip = QLabel("由 Microsoft Store 安装与更新，启动器只负责唤醒。")
+        head = QLabel("基岩版客户端由 Microsoft Store 交付")
+        head.setObjectName("fieldLabel")
+        lay.addWidget(head)
+
+        self.store_tip = QLabel(
+            "商店发的是加密的 MSIXVC 容器，真实下载走 Windows Update，"
+            "而且要你自己账号持有这个游戏的许可 —— 第三方启动器拿不到可安装的包。"
+            "所以这里不提供「下载版本」，能做的是把商店状态查给你、把你一键送进商店页。")
         self.store_tip.setObjectName("mutedLabel")
-        self.store_tip.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.store_tip.setWordWrap(True)
         lay.addWidget(self.store_tip)
 
+        card = make_sheet()
+        card_lay = QVBoxLayout(card)
+        card_lay.setContentsMargins(SPACE_LG, SPACE_MD, SPACE_LG, SPACE_MD)
+        card_lay.setSpacing(SPACE_XS)
+
+        self.store_title = QLabel("正在读取商店信息…")
+        self.store_title.setObjectName("title")
+        card_lay.addWidget(self.store_title)
+
+        self.store_meta = QLabel("")
+        self.store_meta.setObjectName("mutedLabel")
+        self.store_meta.setWordWrap(True)
+        card_lay.addWidget(self.store_meta)
+
+        self.store_local = QLabel("")
+        self.store_local.setObjectName("statusLabel")
+        self.store_local.setWordWrap(True)
+        card_lay.addWidget(self.store_local)
+        lay.addWidget(card)
+
         row = QHBoxLayout()
-        row.addStretch()
+        row.setSpacing(SPACE_SM)
+        self.store_open_btn = QPushButton("在商店中打开")
+        self.store_open_btn.setObjectName("btnPrimary")
+        self.store_open_btn.setFixedHeight(HIT_MIN + 2)
+        self.store_open_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.store_open_btn.setToolTip("打开 Minecraft for Windows 的商店详情页")
+        self.store_open_btn.clicked.connect(lambda: self._open_store_page("pdp"))
+        row.addWidget(self.store_open_btn)
+
+        self.store_updates_btn = QPushButton("打开商店更新")
+        self.store_updates_btn.setFixedHeight(HIT_MIN + 2)
+        self.store_updates_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.store_updates_btn.setToolTip("打开商店的「下载与更新」页，检查更新")
+        self.store_updates_btn.clicked.connect(lambda: self._open_store_page("updates"))
+        row.addWidget(self.store_updates_btn)
+
         self.store_detect_btn = QPushButton("检测本机安装")
         self.store_detect_btn.setObjectName("btnBlue")
         self.store_detect_btn.setFixedHeight(HIT_MIN + 2)
@@ -781,6 +825,55 @@ class LibraryPage(QWidget):
         lay.addLayout(row)
         lay.addStretch()
         return w
+
+    def _load_store_state(self):
+        p = self._provider(self._install_pid)
+        fn = getattr(p, "store_state", None) if p is not None else None
+        if not callable(fn):
+            self.store_title.setText("该产品没有商店信息。")
+            self.store_meta.setText("")
+            self.store_local.setText("")
+            return
+        self.store_title.setText("正在读取商店信息…")
+        self.store_meta.setText("")
+        self.store_local.setText("")
+        self._spawn("store_state", fn, self._store_state_loaded)
+
+    def _store_state_loaded(self, payload, err):
+        if err:
+            self.store_title.setText("商店信息读取失败")
+            self.store_meta.setText(friendly_error(err))
+            return
+        d = payload if isinstance(payload, dict) else {}
+        self.store_title.setText(str(d.get("title") or "Minecraft for Windows"))
+        bits = []
+        if d.get("size_text"):
+            bits.append("安装体积 " + str(d["size_text"]))
+        if d.get("updated_date"):
+            bits.append("商店包最近更新 " + str(d["updated_date"]))
+        fmts = d.get("package_formats") or []
+        if fmts:
+            bits.append("交付格式 " + "/".join(str(f) for f in fmts)
+                        + "（加密容器，需要账号许可）")
+        self.store_meta.setText(" · ".join(bits))
+        if d.get("installed"):
+            ver = str(d.get("local_version") or "").strip()
+            self.store_local.setText("本机：已安装" + (" " + ver if ver else "（版本号读不出来）"))
+        else:
+            self.store_local.setText("本机：未安装")
+
+    def _open_store_page(self, target: str = "pdp"):
+        p = self._provider(self._install_pid)
+        fn = getattr(p, "open_store", None) if p is not None else None
+        if not callable(fn):
+            self.inst_status.setText("该产品没有商店页。")
+            return
+        ok, msg = fn(target)
+        if ok:
+            self.inst_status.setText(
+                "已打开商店页面。装好之后点「检测本机安装」把它接进来。")
+        else:
+            self.inst_status.setText(str(msg))
 
     # ═══════════════ 工具 ═══════════════
 
@@ -1712,17 +1805,8 @@ class LibraryPage(QWidget):
 
         if mode == "store":
             self.inst_stack.setCurrentIndex(2)
-            p = self._provider(pid)
-            data_dir = getattr(p, "data_dir", None) if p is not None else None
-            note = ""
-            if callable(data_dir):
-                try:
-                    note = "（数据目录：" + str(data_dir()) + "）"
-                except Exception:
-                    note = ""
-            self.store_tip.setText(
-                "由 Microsoft Store 安装与更新，启动器只负责唤醒。" + note)
-            self.inst_status.setText("点「检测本机安装」看看这台机器上有没有。")
+            self._load_store_state()
+            self.inst_status.setText("")
             return
 
         self.inst_stack.setCurrentIndex(0)
@@ -1964,6 +2048,12 @@ class LibraryPage(QWidget):
         if not vid:
             return
 
+        # 服务端这类产品：install() 下载 zip 后自己就注册好实例了，
+        # 不能再来一遍 store.create（会多出一个重复实例），也没有客户端 jar 可校验。
+        if CAP_MODLOADER not in self._caps(pid) and callable(getattr(p, "import_zip", None)):
+            self._install_direct(p, version, vid)
+            return
+
         installed_ids = getattr(self, "_installed_ids", set()) or set()
         if vid in installed_ids and self.store is not None:
             existing = self.store.find_by_version(pid, vid)
@@ -2114,6 +2204,36 @@ class LibraryPage(QWidget):
                 print(f"[library] 复制 {src} 失败: {e}", file=sys.stderr)
         return placed
 
+    def _install_direct(self, p, version, vid):
+        """provider 自己会建实例的产品（BDS）：下载 + 注册，一步到位。"""
+        holder = {}
+
+        def task(cb):
+            holder["inst"] = p.install(version, cb)
+
+        self.install_go_btn.setEnabled(False)
+        try:
+            d = ProgressDialog("下载 " + vid, task, self)
+            d.start()
+            if d.was_cancelled:
+                self.inst_status.setText("已取消下载。")
+                return
+            if not d.success:
+                self.inst_status.setText("下载失败。")
+                QMessageBox.critical(self, "下载失败", friendly_error(d.error_msg))
+                return
+            inst = holder.get("inst")
+            if inst is None:
+                self.inst_status.setText("装好了，但没拿到实例信息。")
+                self.refresh()
+                return
+            self.inst_status.setText("装好了：" + vid)
+            self.refresh()
+            self._show_detail(inst)
+            self._sync_tree_selection(inst.id)
+        finally:
+            self.install_go_btn.setEnabled(True)
+
     def _import_server_zip(self):
         pid = self._install_pid
         p = self._provider(pid)
@@ -2183,6 +2303,7 @@ class LibraryPage(QWidget):
         names = "、".join(
             str(getattr(v, "display", "") or getattr(v, "id", "")) for v in versions[:5])
         self.inst_status.setText("检测到 {} 个安装：{}".format(len(versions), names))
+        self._load_store_state()
         pid = self._install_pid
         for v in versions:
             vid = str(getattr(v, "id", "") or "")

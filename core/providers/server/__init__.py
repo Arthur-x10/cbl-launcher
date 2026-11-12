@@ -42,6 +42,7 @@ import zipfile
 from core.providers.base import (
     CAP_CONSOLE,
     CAP_INSTANCE_DIR,
+    CAP_VERSION_LIST,
     GameVersion,
     Instance,
     LaunchError,
@@ -188,14 +189,89 @@ class ServerProvider:
     # ── 能力 ──
 
     def capabilities(self) -> set:
-        return {CAP_CONSOLE, CAP_INSTANCE_DIR}
+        return {CAP_CONSOLE, CAP_INSTANCE_DIR, CAP_VERSION_LIST}
+
+    # ── 官方 BDS 下载 ──
+
+    def list_bds(self) -> list:
+        """Mojang 公开链接接口里的 BDS 列表（只留 Windows 能跑的）。"""
+        try:
+            from core.providers.server import links as _links
+            return [dict(x) for x in _links.fetch_links() if x.get("platform") == "win"]
+        except Exception as e:  # noqa: BLE001 — 拿不到列表不该让整页崩
+            print("[server] 取 BDS 链接失败: %s" % e, file=sys.stderr)
+            return []
 
     def list_remote(self):
-        """BDS 没有版本枚举接口，UI 只给「导入 BDS zip」。"""
-        return None
+        """远端可下载的 BDS 版本（正式版 + 预览版）。"""
+        out = []
+        for item in self.list_bds():
+            version = str(item.get("version") or "")
+            kind = str(item.get("kind") or "bds")
+            if not version:
+                continue
+            preview = kind.endswith("preview")
+            out.append(GameVersion(
+                provider=self.id,
+                id=(version if not preview else "preview:" + version),
+                display=(version if not preview else version + "（预览版）"),
+                kind=("server-preview" if preview else "server"),
+                installed=False,
+                meta={
+                    "version": version,
+                    "url": item.get("url", ""),
+                    "file_name": item.get("file_name", ""),
+                    "kind": kind,
+                    "preview": preview,
+                },
+            ))
+        return out
+
+    def _bds_item(self, version) -> dict:
+        from core.providers.server import links as _links
+        vid = str(getattr(version, "id", version) or "").strip()
+        preview = vid.startswith("preview:")
+        plain = vid.split(":", 1)[-1]
+        want_kind = "bds-preview" if preview else "bds"
+        for item in self.list_bds():
+            if item.get("kind") != want_kind:
+                continue
+            if item.get("version") == plain:
+                return dict(item)
+        found = _links.find(plain)
+        return dict(found) if found.get("platform") == "win" else {}
 
     def install(self, version, cb=None):
-        raise LaunchError("请下载官方 BDS zip 后用「导入服务端」")
+        """下载官方 BDS zip 并自动注册成实例。返回 Instance。"""
+        item = self._bds_item(version)
+        if not item:
+            raise LaunchError("找不到这个 BDS 版本的官方下载链接（可能已经被下线）")
+        url = item["url"]
+        name = item.get("file_name") or ("bedrock-server-%s.zip" % item.get("version"))
+        tmpdir = tempfile.mkdtemp(prefix="bds-dl-")
+        zip_path = os.path.join(tmpdir, name)
+        try:
+            _report(cb, "正在下载 " + name)
+            downloader = getattr(self.ctx, "downloader", None) if self.ctx is not None else None
+            if downloader is None:
+                from core.download import Downloader
+                downloader = Downloader()
+            cancel = getattr(cb, "is_cancelled", None)
+
+            def progress(done, total):
+                pct = int(done * 100 / total) if total else 0
+                _report(cb, "正在下载 %s（%d%%）" % (name, pct))
+
+            downloader.download(
+                url, zip_path, progress=progress,
+                cancel=(lambda: bool(cancel())) if callable(cancel) else None,
+                overwrite=True)
+            if not os.path.isfile(zip_path) or os.path.getsize(zip_path) < 1024:
+                raise LaunchError("下载下来的文件不完整：" + zip_path)
+            _report(cb, "正在解压并注册实例")
+            return self.import_zip(zip_path, "")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
     def uninstall(self, version_id: str):
         return False, "服务端没有商店式卸载：在实例列表里「删除实例」即可（会删掉 server 目录）"

@@ -51,6 +51,19 @@ def sha1_of(path: str) -> str:
     return h.hexdigest()
 
 
+# 一定要带真 UA：有些 CDN（例如 www.minecraft.net）会直接挂掉 python-requests
+# 的默认 User-Agent —— 不报错、不返回，一直挂到读超时。实测换浏览器 UA 后 0.7s 出 206。
+_BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+
+
+def _headers(extra: Optional[dict] = None) -> dict:
+    out = {"User-Agent": _BROWSER_UA, "Accept": "*/*"}
+    if extra:
+        out.update({k: v for k, v in extra.items() if v is not None})
+    return out
+
+
 class Downloader:
     def __init__(self, concurrency: int = 4, timeout: int = 30, retries: int = 3,
                  rate_limit_kbps: int = 0, chunk_threshold: int = 4 * 1024 * 1024):
@@ -105,11 +118,13 @@ class Downloader:
 
     def _probe(self, url: str):
         try:
-            r = requests.head(url, timeout=self.timeout, allow_redirects=True)
+            r = requests.head(url, timeout=self.timeout, allow_redirects=True,
+                              headers=_headers())
             size = int(r.headers.get("Content-Length") or 0)
             ranges = (r.headers.get("Accept-Ranges", "") or "").lower() == "bytes"
             if size <= 0:
-                r2 = requests.get(url, timeout=self.timeout, headers={"Range": "bytes=0-0"})
+                r2 = requests.get(url, timeout=self.timeout,
+                                  headers=_headers({"Range": "bytes=0-0"}))
                 if r2.status_code == 206:
                     cr = r2.headers.get("Content-Range", "")
                     if "/" in cr:
@@ -126,7 +141,8 @@ class Downloader:
         for attempt in range(self.retries):
             headers = {"Range": f"bytes={start}-"} if start else {}
             try:
-                with requests.get(url, headers=headers, timeout=self.timeout, stream=True) as r:
+                with requests.get(url, headers=_headers(headers),
+                                  timeout=self.timeout, stream=True) as r:
                     if start and r.status_code != 206:
                         start = 0
                         headers = {}
@@ -176,7 +192,7 @@ class Downloader:
             for attempt in range(self.retries):
                 try:
                     with requests.get(url, timeout=self.timeout, stream=True,
-                                      headers={"Range": f"bytes={a}-{b}"}) as r:
+                                      headers=_headers({"Range": f"bytes={a}-{b}"})) as r:
                         r.raise_for_status()
                         with open(p, "wb") as f:
                             for chunk in r.iter_content(65536):
