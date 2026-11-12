@@ -303,6 +303,26 @@ def _has_mod_loader(version_id: str) -> bool:
     return any(k in low for k in _MODLOADER_KEYS)
 
 
+def _mod_profile(version_id: str, java_major: int, *mod_dirs):
+    """把「版本 / 加载器 / mod 数 / Java」凑成调优输入。
+
+    mod 数以前只看版本号里有没有 forge —— 那是"有没有加载器"，不是"有几个 mod"。
+    原版 + 40 个 mod（靠 Sinytra 之类）和原版空目录会被算成同一档，堆差一倍。
+    """
+    from core.providers.java import combos
+    detected = combos.detect_from_version_id(version_id)
+    loader = ""
+    for lid in ("neoforge", "forge", "quilt", "fabric", "liteloader"):
+        if lid in detected or lid in (version_id or "").lower():
+            loader = lid
+            break
+    mc_version = combos.mc_version_of(version_id)
+    mod_count = performance.count_mod_jars(*[d for d in mod_dirs if d])
+    return performance.build_profile(
+        mc_version=mc_version, loader=loader,
+        mod_count=mod_count, java_major=java_major)
+
+
 def build_jvm_args(mc_dir: str, config, java_path: str, version_id: str,
                    instance: Optional[Instance] = None,
                    auth: Optional[dict] = None) -> list[str]:
@@ -313,18 +333,20 @@ def build_jvm_args(mc_dir: str, config, java_path: str, version_id: str,
     inst_min = int(getattr(instance, "ram_min", 0) or 0)
     inst_max = int(getattr(instance, "ram_max", 0) or 0)
 
-    if inst_max:
-        ram_min = inst_min or max(512, inst_max // 4)
-        args = [f"-Xms{ram_min}M", f"-Xmx{inst_max}M"]
-    elif config is not None and config.get("auto_performance", True):
-        info = performance.get_system_info()
+    auto = config is not None and config.get("auto_performance", True)
+    if auto:
+        # 自动模式优先：内存与 JVM 由「机器 + 版本 + 加载器 + mod 数」算出来，
+        # 实例上的旧数值不再参与（那些字段是上一版 UI 留下的，用户已经看不到输入框）。
         # 问不出 Java 版本时按版本要求兜底：1.7.10 不该拿到 Java 11+ 才有的 GC 参数
         java_major = _java_major(java_path) or required_java(mc_dir, version_id) or 17
-        args = performance.generate_jvm_args(
-            info["total_ram_mb"], info["cpu_cores"], _has_mod_loader(version_id), java_major
-        )
-        if inst_min:
-            args = [f"-Xms{inst_min}M" if a.startswith("-Xms") else a for a in args]
+        game_dir = _game_dir(instance, mc_dir) if instance is not None else mc_dir
+        profile = _mod_profile(version_id, java_major,
+                               os.path.join(game_dir, "mods"),
+                               os.path.join(mc_dir, "mods"))
+        args, _notes = performance.build_args(profile)
+    elif inst_max:
+        ram_min = inst_min or max(512, inst_max // 4)
+        args = [f"-Xms{ram_min}M", f"-Xmx{inst_max}M"]
     elif config is not None:
         args = [f"-Xms{config.get_ram_min()}M", f"-Xmx{config.get_ram_max()}M"]
     else:

@@ -386,6 +386,16 @@ class MainWindow(QMainWindow):
         if hasattr(pages[index], "refresh"):
             pages[index].refresh()
 
+    def goto_settings_performance(self):
+        """从实例详情页跳过来：切到设置页并把「内存与性能」滚到眼前。"""
+        try:
+            self.switch_page(2)
+        except Exception:
+            return
+        focus = getattr(self.settings_page, "focus_performance", None)
+        if callable(focus):
+            focus()
+
     def _set_nav_enabled(self, enabled):
         for key, btn in self.nav_buttons:
             btn.setEnabled(enabled)

@@ -295,7 +295,7 @@ class LibraryPage(QWidget):
         self.launch_status.setWordWrap(True)
         lay.addWidget(self.launch_status)
 
-        lay.addWidget(self._build_jvm())
+        lay.addWidget(self._build_launch_info())
         lay.addWidget(self._build_loader())
         lay.addWidget(self._build_mods())
         lay.addWidget(self._build_pack_import())
@@ -311,79 +311,132 @@ class LibraryPage(QWidget):
 
     # ── CAP_JVM ──
 
-    def _build_jvm(self):
+    # ── 启动配置（自动，只读） ──
+
+    def _build_launch_info(self):
+        """内存与 JVM 已经不在这里手调了 —— 由设置页的自动调优统一决定。"""
         w = QWidget()
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, SPACE_SM, 0, 0)
         lay.setSpacing(SPACE_SM)
-        lay.addWidget(self._sec("内存与 JVM"))
 
-        ram = QHBoxLayout()
-        ram.setSpacing(SPACE_LG)
-        self.ram_min = QSpinBox()
-        self.ram_min.setRange(0, 32768)
-        self.ram_min.setSingleStep(256)
-        self.ram_min.setSuffix(" MB")
-        self.ram_min.setFixedHeight(HIT_MIN)
-        self.ram_min.setAccessibleName("最小内存")
-        self.ram_max = QSpinBox()
-        self.ram_max.setRange(0, 32768)
-        self.ram_max.setSingleStep(256)
-        self.ram_max.setSuffix(" MB")
-        self.ram_max.setFixedHeight(HIT_MIN)
-        self.ram_max.setAccessibleName("最大内存")
-        ram.addWidget(labeled_field("最小", self.ram_min))
-        ram.addWidget(labeled_field("最大", self.ram_max))
-        ram.addStretch()
-        lay.addLayout(ram)
+        head = QHBoxLayout()
+        head.addWidget(self._sec("启动配置"))
+        head.addStretch()
+        to_settings = QPushButton("到设置里调整")
+        to_settings.setFixedHeight(HIT_MIN)
+        to_settings.setCursor(Qt.CursorShape.PointingHandCursor)
+        to_settings.clicked.connect(self._goto_settings_memory)
+        head.addWidget(to_settings)
+        lay.addLayout(head)
 
-        self.ram_hint = QLabel("填 0 表示跟随设置页的全局内存。")
-        self.ram_hint.setObjectName("mutedLabel")
-        self.ram_hint.setWordWrap(True)
-        lay.addWidget(self.ram_hint)
-
-        self.jvm_input = QLineEdit()
-        self.jvm_input.setPlaceholderText("-XX:+UseG1GC")
-        self.jvm_input.setAccessibleName("实例 JVM 参数")
-        lay.addWidget(labeled_field("JVM 参数", self.jvm_input, "追加在内存参数之后。"))
-
-        jrow = QHBoxLayout()
-        jrow.setSpacing(SPACE_SM)
-        self.java_input = QLineEdit()
-        self.java_input.setPlaceholderText("留空 = 自动选择")
-        self.java_input.setAccessibleName("实例 Java 路径")
-        jrow.addWidget(self.java_input, 1)
-        browse = QPushButton("浏览")
-        browse.setFixedHeight(HIT_MIN)
-        browse.setCursor(Qt.CursorShape.PointingHandCursor)
-        browse.clicked.connect(self._browse_java)
-        jrow.addWidget(browse)
-        clear = QPushButton("还原自动")
-        clear.setFixedHeight(HIT_MIN)
-        clear.setCursor(Qt.CursorShape.PointingHandCursor)
-        clear.clicked.connect(lambda: self.java_input.setText(""))
-        jrow.addWidget(clear)
-        wrap = QWidget()
-        wrap.setLayout(jrow)
-        lay.addWidget(labeled_field("Java 路径", wrap))
+        self.jvm_auto_label = QLabel("")
+        self.jvm_auto_label.setObjectName("mutedLabel")
+        self.jvm_auto_label.setWordWrap(True)
+        lay.addWidget(self.jvm_auto_label)
 
         self.java_resolved = QLabel("")
-        self.java_resolved.setObjectName("mutedLabel")
+        self.java_resolved.setObjectName("statusLabel")
         self.java_resolved.setWordWrap(True)
         lay.addWidget(self.java_resolved)
 
-        save_row = QHBoxLayout()
-        save_row.addStretch()
-        self.save_btn = QPushButton("保存实例设置")
-        self.save_btn.setObjectName("btnBlue")
-        self.save_btn.setFixedHeight(HIT_MIN)
-        self.save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.save_btn.clicked.connect(self._save_instance_fields)
-        save_row.addWidget(self.save_btn)
-        lay.addLayout(save_row)
-
         self.jvm_frame = w
         return w
+
+    def _fill_launch_info(self, inst, p=None):
+        """把自动算出来的内存/JVM 摊给用户看 —— 只读，改的地方在设置里。"""
+        from core import performance
+        from core.providers.java import combos as _combos
+
+        try:
+            auto = bool(self.config.get("auto_performance", True))
+        except Exception:
+            auto = True
+
+        if not auto:
+            self.jvm_auto_label.setText(
+                "内存与 JVM：手动模式（设置里关掉了自动优化），"
+                "当前按设置页里的全局数值启动。")
+            self._resolve_java(inst, p)
+            return
+
+        detected = _combos.detect_from_version_id(inst.version_id)
+        loader = next((k for k in ("neoforge", "forge", "quilt", "fabric", "liteloader")
+                       if k in detected), "")
+        mc_version = _combos.mc_version_of(inst.version_id)
+
+        mod_dirs = [os.path.join(str(getattr(inst, "game_dir", "") or ""), "mods")]
+        try:
+            mod_dirs.append(os.path.join(self.config.get_minecraft_dir(), "mods"))
+        except Exception:
+            pass
+        mod_count = performance.count_mod_jars(*[d for d in mod_dirs if d])
+
+        try:
+            java_major = self._instance_java_major(inst)
+        except Exception:
+            java_major = 17
+
+        try:
+            profile = performance.build_profile(
+                mc_version=mc_version, loader=loader,
+                mod_count=mod_count, java_major=java_major)
+            min_mb, max_mb, notes = performance.calc_ram(profile)
+            head = "内存 %d–%d MB　·　自动：%s%s，%d 个 mod，Java %d" % (
+                min_mb, max_mb, mc_version or "版本未知",
+                (" + " + loader.capitalize()) if loader else "（原版）",
+                mod_count, java_major)
+            tail = "；".join(notes) if notes else ""
+            self.jvm_auto_label.setText(head + (("\n" + tail) if tail else ""))
+        except Exception as e:
+            self.jvm_auto_label.setText("计算推荐值失败：%s" % e)
+        self._resolve_java(inst, p)
+
+    def _instance_java_major(self, inst):
+        """这个实例实际会用哪个 Java，就用它的主版本去算 GC 参数。
+
+        宁可问不出来也不要猜成 17 —— 1.7.10 实际跑在 Java 8 上，
+        却按 Java 17 显示参数，用户会以为启动参数对不上。
+        """
+        from core.providers.java import launch as java_launch
+        from core.providers.java import runtime as java_runtime
+
+        path = str(getattr(inst, "java_path", "") or "")
+        if not path:
+            try:
+                info = java_launch.required_java(self.config.get_minecraft_dir(),
+                                                 inst.version_id)
+                path = java_runtime.find_java_for_version(
+                    self.config.get_minecraft_dir(), int(info or 0)) or ""
+            except Exception:
+                path = ""
+        if not path:
+            try:
+                path = self._last_java_hint or ""
+            except Exception:
+                path = ""
+        if not path:
+            try:
+                path = java_runtime.find_runtime_exe(
+                    self.config.get_minecraft_dir(),
+                    java_runtime.runtime_for_required(8)) or ""
+            except Exception:
+                path = ""
+        major = java_launch._java_major(path) if path else 0
+        return int(major or 0) or 17
+
+    def _goto_settings_memory(self):
+        """跳到设置页，让用户去改全局的内存与 JVM。"""
+        win = self.window()
+        goto = getattr(win, "goto_settings_performance", None)
+        if callable(goto):
+            goto()
+            return
+        QMessageBox.information(
+            self, "在设置里调",
+            "打开「设置 → 内存与性能」：自动优化会根据这台机器的内存、"
+            "这个版本需要什么、装了多少 mod 来分配内存和 JVM 参数。")
+
 
     # ── CAP_MODLOADER ──
 
@@ -1331,11 +1384,7 @@ class LibraryPage(QWidget):
         self._jvm_active = CAP_JVM in caps
         self.jvm_frame.setVisible(self._jvm_active)
         if self._jvm_active:
-            self.ram_min.setValue(int(inst.ram_min or 0))
-            self.ram_max.setValue(int(inst.ram_max or 0))
-            self.jvm_input.setText(inst.jvm_args or "")
-            self.java_input.setText(inst.java_path or "")
-            self._resolve_java(inst, p)
+            self._fill_launch_info(inst, p)
 
         # ── CAP_MODLOADER ──
         self.loader_frame.setVisible(CAP_MODLOADER in caps)
@@ -1459,7 +1508,7 @@ class LibraryPage(QWidget):
             QMessageBox.warning(
                 self, "无法启动", "产品 " + inst.provider + " 没有加载，无法启动该实例。")
             return
-        self._persist_instance(inst)
+        # 内存与 JVM 由设置页的自动调优决定，这里不再需要启动前回写
         auth = auth_dict(self.config)
 
         self.launch_btn.setEnabled(False)
@@ -1587,43 +1636,6 @@ class LibraryPage(QWidget):
         self.launch_btn.setText(t("library.play"))
 
     # ═══════════════ 实例字段保存 ═══════════════
-
-    def _persist_instance(self, inst):
-        if not self._jvm_active or self._sel_inst is None:
-            return False
-        if self._sel_inst.id != inst.id:
-            return False
-        mn, mx = int(self.ram_min.value()), int(self.ram_max.value())
-        if mn > 0 and mx > 0 and mn > mx:
-            self._set_stats(self.launch_status, "最小内存不能大于最大内存。", _DANGER)
-            return False
-        inst.ram_min = mn
-        inst.ram_max = mx
-        inst.jvm_args = self.jvm_input.text().strip()
-        inst.java_path = self.java_input.text().strip()
-        try:
-            return bool(self.store.update(inst)) if self.store is not None else False
-        except Exception:
-            return False
-
-    def _save_instance_fields(self):
-        inst = self._sel_inst
-        if inst is None:
-            return
-        if not self._jvm_active:
-            QMessageBox.information(self, "提示", "该产品没有可编辑的 JVM 设置。")
-            return
-        ok = self._persist_instance(inst)
-        self._set_stats(
-            self.launch_status,
-            "实例设置已保存。" if ok else "实例设置保存失败（注册表不可写）。",
-            _OK if ok else _DANGER)
-
-    def _browse_java(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "选择 Java", "", "Java (javaw.exe java.exe);;All (*)")
-        if path:
-            self.java_input.setText(path)
 
     # ═══════════════ 打开目录 / 重命名 / 删除 ═══════════════
 

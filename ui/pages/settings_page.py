@@ -40,6 +40,7 @@ class SettingsPage(QWidget):
         # 滚动区必须整体透明：QScrollArea 的 viewport 默认用 Fusion 浅色
         # palette 铺底，深色主题下会露出浅灰白，无法阅读。
         scroll = QScrollArea()
+        self.scroll = scroll          # 供 focus_performance() 定位用
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setObjectName("scrollArea")
@@ -73,7 +74,10 @@ class SettingsPage(QWidget):
         row.addWidget(b2)
         wrap = QWidget()
         wrap.setLayout(row)
-        lay.addWidget(labeled_field("Java 路径", wrap, "留空则启动时尝试自动检测。"))
+        lay.addWidget(labeled_field(
+            "Java 路径", wrap,
+            "留空 = 按版本自动选（1.7.10 → Java 8，1.17+ → Java 17/21）。"
+            "只有想强制所有实例共用一个 Java 时才填。"))
 
         self.scan_btn = QPushButton("扫描本机 Java")
         self.scan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -89,9 +93,18 @@ class SettingsPage(QWidget):
 
         lay.addWidget(self._sec("内存与性能"))
 
-        self.chk_auto_perf = QCheckBox("自动优化（根据系统配置自动分配内存和 JVM 参数）")
+        auto_row = QHBoxLayout()
+        auto_row.setSpacing(SPACE_SM)
+        self.chk_auto_perf = QCheckBox("自动优化（按机器 + 版本 + 加载器 + mod 数算内存与 JVM）")
         self.chk_auto_perf.stateChanged.connect(self._on_auto_perf)
-        lay.addWidget(self.chk_auto_perf)
+        auto_row.addWidget(self.chk_auto_perf)
+        auto_row.addStretch()
+        self.perf_detect_btn = QPushButton("重新检测本机")
+        self.perf_detect_btn.setFixedHeight(HIT_MIN)
+        self.perf_detect_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.perf_detect_btn.clicked.connect(self._refresh_perf_info)
+        auto_row.addWidget(self.perf_detect_btn)
+        lay.addLayout(auto_row)
 
         # 说明自动优化与手动内存的从属关系（配置语义不变，只补 UI 文案）
         self.auto_hint = QLabel("")
@@ -356,9 +369,7 @@ class SettingsPage(QWidget):
         self.manual_ram_widget.setVisible(not auto)
         self._update_auto_hint(auto)
         if auto:
-            from core.performance import get_system_info, get_optimization_summary
-            info = get_system_info()
-            self.perf_info.setText(get_optimization_summary(info, has_mods=True))
+            self._refresh_perf_info()
 
         self.skin_input.setText(self.config.get("local_skin_path", ""))
         self.cape_input.setText(self.config.get("local_cape_path", ""))
@@ -392,17 +403,46 @@ class SettingsPage(QWidget):
         self.manual_ram_widget.setVisible(not auto)
         self._update_auto_hint(auto)
         if auto:
-            from core.performance import get_system_info, get_optimization_summary
-            info = get_system_info()
-            self.perf_info.setText(get_optimization_summary(info, has_mods=True))
+            self._refresh_perf_info()
         else:
             self.perf_info.setText("")
+
+    def focus_performance(self):
+        """被实例详情页叫过来时，把「内存与性能」那一块顶到可视区。"""
+        try:
+            self.scroll.ensureWidgetVisible(self.chk_auto_perf, 40, 40)
+        except Exception:
+            pass
+        try:
+            self.chk_auto_perf.setFocus(Qt.FocusReason.OtherFocusReason)
+        except Exception:
+            pass
+
+    def _refresh_perf_info(self):
+        """把「这台机器上，各种组合会分到多少」摊出来 —— 数字都是现算的。"""
+        from core import performance
+        try:
+            info = performance.get_system_info()
+            total = int(info.get("total_ram_mb") or 0)
+            cores = int(info.get("cpu_cores") or 0)
+            rows = performance.preview_rows(total, cores)
+        except Exception as e:
+            self.perf_info.setText("检测失败：%s" % e)
+            return
+        lines = ["本机：%d GB 内存 / %d 核" % (total // 1024, cores)]
+        lines.append("启动时按那个实例的版本、加载器、mod 数自动取档：")
+        for label, min_mb, max_mb in rows:
+            lines.append("　%s：%d – %d MB" % (label, min_mb, max_mb))
+        lines.append("GC 参数按实际使用的 Java 版本生成（Java 8 只给基础 G1，"
+                     "Java 11+ 才补那一套细分参数）。")
+        self.perf_info.setText(chr(10).join(lines))
 
     def _update_auto_hint(self, auto: bool):
         """说明两种内存模式的关系，避免用户误以为手填值仍然生效。"""
         if auto:
             self.auto_hint.setText(
-                "自动优化已开启：按本机内存自动分配内存与 JVM 参数，忽略下方手动内存值。"
+                "自动优化已开启：按本机内存 + 这个实例的版本 / 加载器 / mod 数量"
+                "逐次算内存与 JVM 参数，忽略下方手动内存值。"
             )
         else:
             self.auto_hint.setText(
